@@ -98,15 +98,20 @@ def extract_claude_json(text):
 
 
 
-def claude(prompt, max_tokens=5000):
+
+def claude(prompt, max_tokens=5000, max_attempts=4):
     if not KEY:
         raise RuntimeError("Secret ANTHROPIC_API_KEY absent.")
 
-    last_error = "Réponse vide ou non exploitable."
+    max_attempts = max(1, min(int(max_attempts), 4))
+    last_error = "R?ponse vide ou non exploitable."
 
-    for attempt in range(1, 5):
+    for attempt in range(1, max_attempts + 1):
         try:
-            requested_tokens = min(max_tokens + (attempt - 1) * 1500, 9000)
+            requested_tokens = min(
+                max_tokens + (attempt - 1) * 1000,
+                9000
+            )
 
             result = request_json(
                 "https://api.anthropic.com/v1/messages",
@@ -120,7 +125,10 @@ def claude(prompt, max_tokens=5000):
                     "max_tokens": requested_tokens,
                     "messages": [{
                         "role": "user",
-                        "content": json.dumps(prompt, ensure_ascii=False),
+                        "content": json.dumps(
+                            prompt,
+                            ensure_ascii=False
+                        ),
                     }],
                 },
                 timeout=240,
@@ -140,31 +148,35 @@ def claude(prompt, max_tokens=5000):
                     last_error = (
                         f"JSON invalide : {exc}; "
                         f"stop_reason={result.get('stop_reason')}; "
-                        f"tentative={attempt}/4"
+                        f"tentative={attempt}/{max_attempts}"
                     )
             else:
                 last_error = (
-                    f"Réponse sans texte; "
+                    "R?ponse sans texte; "
                     f"stop_reason={result.get('stop_reason')}; "
-                    f"usage={result.get('usage')}; "
-                    f"tentative={attempt}/4"
+                    f"tentative={attempt}/{max_attempts}"
                 )
 
         except Exception as exc:
-            last_error = f"Erreur API : {exc}; tentative={attempt}/4"
+            last_error = (
+                f"Erreur API : {exc}; "
+                f"tentative={attempt}/{max_attempts}"
+            )
 
-        if attempt < 4:
+        if attempt < max_attempts:
             delay = 5 * (2 ** (attempt - 1))
             print(
                 f"Nouvelle tentative Claude dans {delay}s "
-                f"({attempt}/4).",
+                f"({attempt}/{max_attempts}).",
                 flush=True,
             )
             time.sleep(delay)
 
     raise RuntimeError(
-        "Claude a échoué après 4 tentatives. " + last_error
+        f"Claude a ?chou? apr?s {max_attempts} tentative(s). "
+        + last_error
     )
+
 
 
 def run_git(args, cwd=None, capture=True):
@@ -448,37 +460,31 @@ def incremental_commits(last_sha):
     return details, latest_sha
 
 
+
 def evaluate_baseline(snapshot, register, history_summary, latest_commits):
     prompt = {
         "task": (
-            "Établir une estimation technique documentée de l'état "
+            "?tablir une estimation technique document?e de l'?tat "
             "actuel du projet Leonida."
         ),
         "rules": [
-            "Retourne exactement un objet JSON ? la racine, jamais un tableau ni une ?tape isol?e.",
-            "Les cl?s racine obligatoires sont overall, note, stages, evidence_register et commit_summaries.",
-            "La cl? stages doit contenir exactement 10 objets avec id, progress et evidence.",
-            "La cl? evidence_register doit contenir au moins 3 affirmations factuelles v?rifiables.",
-            "La cl? commit_summaries doit contenir des r?sum?s reli?s aux SHA complets des commits fournis.",
-            "Analyse le contenu réel des fichiers, pas seulement leurs noms.",
-            "Ne prétends pas avoir analysé tout l'historique.",
-            "Distingue code présent, code fonctionnel, tests synthétiques "
-            "et validation sur matériel réel.",
+            "Analyse le contenu r?el des fichiers, pas seulement leurs noms.",
+            "Ne pr?tends pas avoir analys? tout l'historique.",
+            "Distingue code pr?sent, code fonctionnel, tests synth?tiques "
+            "et validation sur mat?riel r?el.",
             "Ne confonds pas compilation et fonctionnement.",
-            "Ne compte pas deux fois une même fonctionnalité.",
-            "Pour chaque étape, explique les preuves trouvées ou "
+            "Ne compte pas deux fois une m?me fonctionnalit?.",
+            "Pour chaque ?tape, explique les preuves trouv?es ou "
             "l'absence de preuve suffisante.",
-            "Une étape sans preuve doit rester à 0.",
-            "L'étape 10 doit toujours rester à 0.",
-            "N'invente aucun résultat de test, aucune validation GPU "
-            "et aucun démarrage du jeu.",
-            "Ne cherche pas à atteindre un pourcentage cible.",
-            "La progression globale est la moyenne des étapes 1 à 9.",
-            "Chaque résumé de commit doit être relié au SHA fourni.",
-            "Retourne les 10 étapes, même si certaines restent à 0.",
-            "Le registre doit contenir des affirmations factuelles "
-            "et leur preuve identifiable.",
-            "Réponds uniquement avec un objet JSON valide en français."
+            "Une ?tape sans preuve doit rester ? 0.",
+            "L'?tape 10 doit toujours rester ? 0.",
+            "N'invente aucun r?sultat de test, aucune validation GPU "
+            "et aucun d?marrage du jeu.",
+            "Ne cherche pas ? atteindre un pourcentage cible.",
+            "La progression globale est la moyenne des ?tapes 1 ? 9.",
+            "Chaque r?sum? de commit doit ?tre reli? au SHA fourni.",
+            "Retourne les 10 ?tapes, m?me si certaines restent ? 0.",
+            "R?ponds en fran?ais et en JSON valide."
         ],
         "stages": [
             {"id": i, "name": name}
@@ -489,19 +495,19 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
         "current_repository_snapshot": snapshot,
         "required_output": {
             "overall": 0,
-            "note": "Résumé prudent de l'état du projet.",
+            "note": "R?sum? prudent de l'?tat du projet.",
             "stages": [
                 {
                     "id": i,
                     "progress": 0,
-                    "evidence": "Explication factuelle et précise."
+                    "evidence": "Explication factuelle et pr?cise."
                 }
                 for i, name in STAGES
             ],
             "evidence_register": [
                 {
                     "stage_id": 1,
-                    "claim": "Affirmation vérifiable",
+                    "claim": "Affirmation v?rifiable",
                     "evidence_type": "code",
                     "confidence": "moyenne",
                     "source_paths": [],
@@ -511,13 +517,195 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
             "commit_summaries": [
                 {
                     "sha": "SHA complet fourni",
-                    "summary": "Résumé factuel du changement"
+                    "summary": "R?sum? factuel du changement"
                 }
             ]
         }
     }
 
-    return claude(prompt, max_tokens=7500)
+    print("Phase 1 : analyse des 10 ?tapes...", flush=True)
+    result = claude(prompt, max_tokens=7500)
+
+    # Si Claude a d?j? fourni l'objet complet, aucun deuxi?me appel.
+    if isinstance(result, dict):
+        if (
+            isinstance(result.get("stages"), list)
+            and isinstance(result.get("evidence_register"), list)
+        ):
+            print(
+                "R?ponse compl?te re?ue en une seule phase.",
+                flush=True
+            )
+            return result
+
+        for key in (
+            "required_output", "output", "result",
+            "analysis", "baseline", "data", "response"
+        ):
+            nested = result.get(key)
+            if (
+                isinstance(nested, dict)
+                and isinstance(nested.get("stages"), list)
+                and isinstance(nested.get("evidence_register"), list)
+            ):
+                return nested
+
+    # Si Claude renvoie un tableau, v?rifier qu'il contient bien
+    # les dix ?tapes avant de demander les seules m?tadonn?es.
+    stages = result if isinstance(result, list) else None
+
+    if stages is None:
+        raise RuntimeError(
+            "Format de premi?re r?ponse non reconnu : "
+            + type(result).__name__
+        )
+
+    indexed = {}
+    for item in stages:
+        if isinstance(item, dict):
+            try:
+                sid = int(item.get("id"))
+                indexed[sid] = item
+            except (TypeError, ValueError):
+                continue
+
+    missing = [sid for sid in range(1, 11) if sid not in indexed]
+    if missing:
+        raise RuntimeError(
+            "R?ponse Claude incompl?te. ?tapes absentes : "
+            + str(missing)
+        )
+
+    normalized_stages = [
+        indexed[sid] for sid in range(1, 11)
+    ]
+
+    normalized_stages[9]["progress"] = 0
+    normalized_stages[9]["evidence"] = (
+        "Aucun d?marrage r?el du jeu n'est publiquement confirm?."
+    )
+
+    print(
+        "Les 10 ?tapes sont pr?sentes. Phase 2 : "
+        "r?cup?ration des seules m?tadonn?es manquantes...",
+        flush=True
+    )
+
+    metadata_prompt = {
+        "task": (
+            "Compl?ter une analyse technique existante. "
+            "Ne recommence pas l'analyse des ?tapes."
+        ),
+        "rules": [
+            "Retourne uniquement un objet JSON.",
+            "Ne retourne surtout pas un tableau.",
+            "Fournis les cl?s overall, note, evidence_register "
+            "et commit_summaries.",
+            "Le registre doit contenir au moins trois affirmations "
+            "factuelles distinctes et v?rifiables.",
+            "Chaque affirmation doit ?tre reli?e ? des chemins "
+            "de fichiers ou ? des SHA r?ellement fournis.",
+            "N'invente aucun chemin, commit, test ou r?sultat.",
+            "Si une preuve est insuffisante, ne la transforme pas "
+            "en affirmation positive.",
+            "Les r?sum?s doivent correspondre aux SHA complets fournis.",
+            "L'?tape 10 reste ? z?ro.",
+            "R?ponds uniquement en JSON valide et en fran?ais."
+        ],
+        "already_validated_stage_results": normalized_stages,
+        "repository_snapshot": snapshot,
+        "release_information": history_summary,
+        "recent_commits": latest_commits,
+        "required_output": {
+            "overall": 0,
+            "note": "R?sum? prudent.",
+            "evidence_register": [
+                {
+                    "stage_id": 1,
+                    "claim": "Affirmation v?rifiable",
+                    "evidence_type": "code",
+                    "confidence": "moyenne",
+                    "source_paths": ["chemin r?ellement fourni"],
+                    "commit_shas": ["SHA complet fourni"]
+                },
+                {
+                    "stage_id": 2,
+                    "claim": "Deuxi?me affirmation v?rifiable",
+                    "evidence_type": "commit",
+                    "confidence": "moyenne",
+                    "source_paths": [],
+                    "commit_shas": ["SHA complet fourni"]
+                },
+                {
+                    "stage_id": 3,
+                    "claim": "Troisi?me affirmation v?rifiable",
+                    "evidence_type": "code",
+                    "confidence": "faible",
+                    "source_paths": ["chemin r?ellement fourni"],
+                    "commit_shas": []
+                }
+            ],
+            "commit_summaries": [
+                {
+                    "sha": "SHA complet fourni",
+                    "summary": "R?sum? factuel"
+                }
+            ]
+        }
+    }
+
+    metadata = claude(
+        metadata_prompt,
+        max_tokens=5000,
+        max_attempts=2
+    )
+
+    if not isinstance(metadata, dict):
+        raise RuntimeError(
+            "La phase 2 n'a pas retourn? un objet JSON."
+        )
+
+    # Tol?rer une enveloppe JSON simple.
+    for key in ("output", "result", "response", "data"):
+        if isinstance(metadata.get(key), dict):
+            candidate = metadata[key]
+            if (
+                "evidence_register" in candidate
+                or "commit_summaries" in candidate
+            ):
+                metadata = candidate
+                break
+
+    required = (
+        "overall", "note",
+        "evidence_register", "commit_summaries"
+    )
+    missing_fields = [
+        key for key in required if key not in metadata
+    ]
+
+    if missing_fields:
+        raise RuntimeError(
+            "M?tadonn?es incompl?tes. Champs absents : "
+            + ", ".join(missing_fields)
+        )
+
+    # Reconstituer l'objet attendu par le validateur existant.
+    combined = {
+        "overall": metadata["overall"],
+        "note": metadata["note"],
+        "stages": normalized_stages,
+        "evidence_register": metadata["evidence_register"],
+        "commit_summaries": metadata["commit_summaries"]
+    }
+
+    print(
+        "Les deux phases sont termin?es. Validation finale en cours.",
+        flush=True
+    )
+
+    return combined
+
 
 
 def validate_baseline_result(result, commits):
