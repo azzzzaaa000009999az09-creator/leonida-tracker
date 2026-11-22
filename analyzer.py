@@ -395,37 +395,47 @@ def incremental_commits(last_sha):
 
 def evaluate_baseline(snapshot, register, history_summary, latest_commits):
     prompt = {
-        "task": "Établir l'état initial du projet Leonida à partir de tout l'historique et de l'état actuel du dépôt.",
+        "task": "Évaluer précisément l'état actuel du projet Leonida pour établir le point de départ du tracker.",
         "rules": [
-            "L'historique transmis couvre tous les commits accessibles de la branche principale au moment de l'audit.",
-            "L'instantané décrit le code et la documentation actuellement présents : il prime sur une ancienne fonctionnalité ensuite supprimée.",
-            "N'attribue pas de progression sur la seule base d'un nom de fichier ou d'un commit isolé.",
-            "Distingue code présent, code intégré, tests synthétiques, validation réelle sur GPU et fonctionnement avec le jeu.",
-            "Ne compte pas deux fois la même fonctionnalité entre étapes.",
-            "Les éléments de documentation officiels sont des preuves utiles mais doivent être distingués du code vérifiable.",
-            "Une compilation réussie ne prouve ni l'exécution du jeu ni le gameplay.",
+            "La priorité absolue est le code et la documentation actuellement présents dans le dépôt.",
+            "Les informations de Release et les commits récents servent à comprendre l'évolution du projet.",
+            "Ne prétends jamais avoir analysé les 4592 commits historiques.",
+            "Ne déduis pas qu'une fonctionnalité est terminée à partir d'un nom de fichier seul.",
+            "Distingue implémentation, documentation, tests synthétiques, validation sur GPU réel et intégration runtime.",
+            "Ne compte pas deux fois une fonctionnalité entre les étapes.",
+            "Une compilation ne prouve ni le démarrage du jeu ni le gameplay.",
             "L'étape 10 doit impérativement rester à 0 tant qu'un démarrage réel du jeu n'est pas publiquement confirmé.",
-            "Évalue l'état réel, sans chercher à atteindre un pourcentage cible.",
+            "Évalue honnêtement l'état réel, sans chercher à atteindre un pourcentage cible.",
             "L'estimation globale est la moyenne des étapes 1 à 9, arrondie à l'entier le plus proche.",
-            "Réponds uniquement en JSON valide, en français.",
+            "Réponds uniquement en JSON valide et en français."
         ],
         "stages": [{"id": i, "name": n} for i, n in STAGES],
-        "history_summary": history_summary,
-        "historical_evidence_register": register,
+        "release_information": history_summary,
+        "recent_commits": latest_commits,
         "current_repository_snapshot": snapshot,
-        "latest_commits_for_site": latest_commits,
         "output": {
-            "overall": "entier 0-100",
-            "note": "explication courte et prudente",
+            "overall": 0,
+            "note": "Explication courte et prudente.",
             "stages": [
-                {"id": 1, "progress": 0, "evidence": "preuves actuelles et limites"}
+                {"id": i, "progress": 0, "evidence": "Preuves et limites"}
+                for i, n in STAGES
+            ],
+            "evidence_register": [
+                {
+                    "stage_id": 1,
+                    "claim": "Fait vérifiable",
+                    "evidence_type": "code",
+                    "confidence": "moyenne",
+                    "commit_shas": []
+                }
             ],
             "commit_summaries": [
-                {"sha": "sha complet", "summary": "résumé factuel"}
-            ],
-        },
+                {"sha": "SHA complet", "summary": "Résumé factuel"}
+            ]
+        }
     }
-    return claude(prompt, max_tokens=7000)
+    return claude(prompt, max_tokens=7500)
+
 
 def update_incremental(old_progress, register, details):
     prompt = {
@@ -519,282 +529,218 @@ def update_commit_list(existing, details, summaries):
 
 def main():
     os.chdir(ROOT)
+
     state = read_json(STATE_FILE, {})
     progress = read_json(PROGRESS_FILE, {})
     existing_commits = read_json(COMMITS_FILE, [])
 
     if not state.get("baseline_complete"):
 
-        checkpoint = state.get("baseline_in_progress")
+        print("Initialisation du nouveau point de référence...", flush=True)
 
-        print("Préparation de l'audit historique...", flush=True)
-
-        # Le dépôt source est cloné ou actualisé.
         clone_source()
 
-        if checkpoint:
-            head = checkpoint["head"]
+        run_git(["fetch", "origin", "main"], cwd=CACHE)
+        head = run_git(["rev-parse", "origin/main"], cwd=CACHE)
+        run_git(["checkout", "--detach", head], cwd=CACHE)
 
-            # Revenir exactement à la version utilisée par le checkpoint.
-            run_git(["checkout", head], cwd=CACHE)
+        print("Lecture de la dernière Release officielle...", flush=True)
 
-            commits = all_history(head)
-            register = checkpoint.get("register", [])
-            summaries = checkpoint.get("summaries", [])
-            next_batch = int(checkpoint.get("next_batch", 0))
+        release = None
+        release_summary = ""
+        recent_details = []
+
+        try:
+            release = github(
+                f"{API}/repos/{SOURCE}/releases/latest"
+            )
+
+            tag = release.get("tag_name", "")
+
+            release_summary = json.dumps({
+                "name": release.get("name"),
+                "tag": tag,
+                "published_at": release.get("published_at"),
+                "body": (release.get("body") or "")[:7000],
+                "html_url": release.get("html_url"),
+            }, ensure_ascii=False)
 
             print(
-                f"Reprise de l'audit : lot {next_batch + 1}.",
+                f"Release trouvée : {tag}. Recherche des commits suivants...",
                 flush=True,
             )
 
-        else:
-            head = run_git(["rev-parse", "HEAD"], cwd=CACHE)
-            commits = all_history(head)
+            if tag:
+                release_commit = github(
+                    f"{API}/repos/{SOURCE}/commits/{tag}"
+                )
+                release_sha = release_commit.get("sha")
 
-            register = []
-            summaries = []
-            next_batch = 0
+                if release_sha:
+                    comparison = github(
+                        f"{API}/repos/{SOURCE}/compare/{release_sha}...{head}"
+                    )
 
-            print(
-                f"{len(commits)} commits historiques trouvés.",
-                flush=True,
-            )
+                    post_release = comparison.get("commits", [])
+                    selected = post_release[-30:]
 
-        batches = list(commit_batches(commits, 30))
+                    for item in selected:
+                        recent_details.append(commit_detail(item["sha"]))
 
-        if next_batch > len(batches):
-            raise RuntimeError("Checkpoint incohérent.")
+                    release_summary += (
+                        f"\nSHA de la Release : {release_sha}"
+                        f"\nNombre de commits après la Release : "
+                        f"{comparison.get('total_commits', len(post_release))}"
+                    )
 
-        print(
-            f"Audit : {len(commits)} commits, "
-            f"{len(batches)} lots de 30 maximum.",
-            flush=True,
-        )
-
-        # Sauvegarde initiale du checkpoint.
-        checkpoint = {
-            "head": head,
-            "next_batch": next_batch,
-            "register": register,
-            "summaries": summaries,
-            "commits_total": len(commits),
-            "batch_size": 30,
-        }
-
-        state = {
-            "schema_version": 3,
-            "baseline_in_progress": checkpoint,
-        }
-
-        write_json(STATE_FILE, state)
-
-        # Analyse avec sauvegarde après chaque lot.
-        for batch_index in range(next_batch, len(batches)):
-
-            batch_number = batch_index + 1
-            batch = batches[batch_index]
-
-            print(
-                f"Analyse historique : lot "
-                f"{batch_number}/{len(batches)} "
-                f"({len(batch)} commits)",
-                flush=True,
-            )
-
-            result = analyze_history_batch(
-                batch,
-                batch_number,
-                len(batches),
-            )
-
-            summaries.append(
-                result.get("batch_summary", "")
-            )
-
-            register.extend(
-                result.get("evidence", [])
-            )
-
-            if result.get("open_questions"):
-                register.extend({
-                    "stage_id": 0,
-                    "claim": question,
-                    "evidence_type": "question_ouverte",
-                    "confidence": "faible",
-                    "commit_shas": [],
-                } for question in result["open_questions"][:8])
-
-            # Consolidation périodique.
-            if batch_number % 10 == 0 and batch_number < len(batches):
-
+        except RuntimeError as exc:
+            if "HTTP 404" in str(exc):
+                release = None
+                release_summary = (
+                    "Aucune Release officielle publiée trouvée. "
+                    "Le code actuel du dépôt sert de référence initiale."
+                )
                 print(
-                    "Consolidation intermédiaire des preuves...",
+                    "Aucune Release officielle publiée. "
+                    "Le code actuel sera la référence.",
                     flush=True,
                 )
+            else:
+                raise
 
-                compacted = compact_register(
-                    register,
-                    summaries[-10:],
-                )
-
-                register = compacted.get(
-                    "evidence_register",
-                    [],
-                )
-
-                summaries = [
-                    compacted.get("history_summary", "")
-                ]
-
-            # Enregistrement du dernier lot terminé.
-            checkpoint = {
-                "head": head,
-                "next_batch": batch_number,
-                "register": register,
-                "summaries": summaries,
-                "commits_total": len(commits),
-                "batch_size": 30,
-            }
-
-            state = {
-                "schema_version": 3,
-                "baseline_in_progress": checkpoint,
-            }
-
-            write_json(STATE_FILE, state)
-
-            print(
-                f"Checkpoint enregistré : "
-                f"{batch_number}/{len(batches)}.",
-                flush=True,
+        # Sans Release, prendre uniquement les 15 derniers commits
+        # comme contexte complémentaire, jamais tout l'historique.
+        if not release:
+            latest = github(
+                f"{API}/repos/{SOURCE}/commits?per_page=15"
             )
 
-        # Consolidation finale.
-        if len(register) > 180:
+            for item in reversed(latest):
+                recent_details.append(commit_detail(item["sha"]))
 
-            print(
-                "Consolidation finale du registre...",
-                flush=True,
-            )
-
-            compacted = compact_register(register, summaries)
-
-            register = compacted.get(
-                "evidence_register",
-                [],
-            )
-
-            summaries = [
-                compacted.get("history_summary", "")
-            ]
-
-        history_summary = "\n".join(summaries)[-18000:]
-
-        print(
-            "Analyse du code et de la documentation actuels...",
-            flush=True,
-        )
+        print("Analyse du code actuel...", flush=True)
 
         snapshot = current_snapshot(head)
 
-        latest_records = commits[-40:]
-        latest_details = []
+        print(
+            f"Instantané : {snapshot['file_count']} fichiers "
+            f"répertoriés, {len(snapshot['files'])} contenus sélectionnés.",
+            flush=True,
+        )
 
-        for record in latest_records:
-            latest_details.append({
-                "sha": record["sha"],
-                "message": record["message"],
-                "author": record["author"],
-                "date": record["date"],
-                "url": f"https://github.com/{SOURCE}/commit/{record['sha']}",
-                "files": record["files"],
-            })
+        print(
+            f"Analyse Claude : code actuel + "
+            f"{len(recent_details)} commits de contexte.",
+            flush=True,
+        )
 
-        # Évaluation finale des 10 étapes.
         result = evaluate_baseline(
             snapshot,
-            register,
-            history_summary,
-            latest_details,
+            [],
+            release_summary,
+            recent_details,
         )
 
-        progress = normalize_progress(result)
+        new_progress = normalize_progress(result)
 
+        register = result.get("evidence_register", [])
+        if not isinstance(register, list):
+            register = []
+
+        summaries = result.get("commit_summaries", [])
         commit_list = update_commit_list(
             [],
-            latest_details,
-            result.get("commit_summaries", []),
+            recent_details,
+            summaries,
         )
 
-        # Étape 10 toujours à zéro tant que le jeu ne démarre pas réellement.
         state = {
-            "schema_version": 3,
+            "schema_version": 4,
             "baseline_complete": True,
+            "baseline_method": "release_current_snapshot_incremental",
             "last_sha": head,
-            "history_commits_total": len(commits),
-            "history_batches": len(batches),
-            "history_summary": history_summary,
-            "evidence_register": register,
             "baseline_head": head,
+            "baseline_release": (
+                release.get("tag_name") if release else None
+            ),
+            "baseline_release_url": (
+                release.get("html_url") if release else None
+            ),
             "baseline_completed_at": datetime.datetime.now(
                 datetime.timezone.utc
             ).isoformat(),
+            "evidence_register": register[:250],
         }
 
-        write_json(PROGRESS_FILE, progress)
+        write_json(PROGRESS_FILE, new_progress)
         write_json(COMMITS_FILE, commit_list)
         write_json(STATE_FILE, state)
 
         print(
-            f"Audit initial terminé : {len(commits)} commits examinés. "
-            f"Progression estimée : {progress['overall']}%.",
+            f"Nouvelle référence créée. "
+            f"Progression estimée : {new_progress['overall']}%.",
             flush=True,
         )
 
         return
 
     last_sha = state.get("last_sha")
+
     if not last_sha:
-        raise RuntimeError("État initial incomplet : last_sha absent.")
+        raise RuntimeError("SHA de référence absent.")
 
     print("Recherche des nouveaux commits...", flush=True)
+
     details, latest_sha = incremental_commits(last_sha)
+
     if not latest_sha:
-        print("Impossible de récupérer le dernier commit source.")
-        return
+        raise RuntimeError("Impossible de récupérer le dernier commit source.")
+
     if not details:
-        print("Aucun nouveau commit. Progression conservée.")
+        print("Aucun nouveau commit. Aucun appel Claude.", flush=True)
         return
 
-    print(f"{len(details)} nouveau(x) commit(s) à analyser.", flush=True)
+    print(
+        f"{len(details)} nouveau(x) commit(s) à analyser.",
+        flush=True,
+    )
+
     result = update_incremental(
         progress,
         state.get("evidence_register", []),
         details,
     )
+
     new_progress = normalize_progress(result, progress)
 
     updates = result.get("evidence_updates", [])
+
     if updates:
         state["evidence_register"] = (
             state.get("evidence_register", []) + updates
         )[-250:]
 
     state["last_sha"] = latest_sha
-    state["last_incremental_update"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    state["last_incremental_update"] = datetime.datetime.now(
+        datetime.timezone.utc
+    ).isoformat()
 
     commit_list = update_commit_list(
-        existing_commits, details, result.get("commit_summaries", [])
+        existing_commits,
+        details,
+        result.get("commit_summaries", []),
     )
+
     write_json(PROGRESS_FILE, new_progress)
     write_json(COMMITS_FILE, commit_list)
     write_json(STATE_FILE, state)
+
     print(
-        f"{len(details)} nouveau(x) commit(s) analysé(s). "
+        f"{len(details)} commit(s) analysé(s). "
         f"Progression estimée : {new_progress['overall']}%.",
         flush=True,
     )
+
 
 if __name__ == "__main__":
     try:
