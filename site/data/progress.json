@@ -1,67 +1,67 @@
 {
-  "overall": 2,
-  "last_updated": "2026-11-22T17:12:50.072863+00:00",
-  "note": "Ces commits portent surtout sur la correction de la traduction de shaders (v_med3_f32 avec NaN), sur des correctifs de compilation et de tests du shim D3D12 vers Vulkan, et sur de l'outillage. Le tracker ne montre aucun démarrage réel du jeu ni aucun gameplay, donc l'étape 10 reste à 0. Les tests cités sont synthétiques. Les builds et tests réparés ne prouvent pas le gameplay. Aucune fonctionnalité n'est comptée deux fois : le correctif MSAA et le correctif de chaîne de border colour relèvent de la même étape 9, sans cumul artificiel.",
+  "overall": 0,
+  "last_updated": "2026-11-22T17:42:00.721663+00:00",
+  "note": "Estimation fondée sur l'historique et les preuves du dépôt.",
   "stages": [
     {
       "id": 1,
       "name": "Identification du jeu et des formats",
       "progress": 0,
-      "evidence": "Aucun commit n'ajoute d'identification du jeu ou de format. Les modifications de first_light.py et make_game.py ne concernent que l'écriture de fichiers texte avec fins de ligne LF, ce qui n'est pas une avancée fonctionnelle."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 2,
       "name": "Shaders et systèmes graphiques",
-      "progress": 6,
-      "evidence": "Code ajouté dans tools/rdna2spirv.py (PR #2029) : med3_f remplace FClamp par NMin(NMax(z, NMin(x, y)), NMax(x, y)) pour éviter un comportement GLSL.std.450 indéfini quand z est NaN ou que x et y sont NaN. Tests synthétiques ajoutés dans tests/semantic/test_float_nan_fract.py : lignes avec NaN en S2 ou en deux opérandes, triple NaN, et vérification que le SPIR-V généré ne contient pas « FClamp ». Ces tests ne prouvent pas le rendu dans le jeu. docs/design.md consigne des mesures matérielles sur gfx1150 pour les modificateurs de sortie, et note que le traducteur diffère probablement du matériel (il garde -0). Cet écart est documenté, pas corrigé. Les autres changements de tests ou d'outils (te"
+      "progress": 0,
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 3,
       "name": "Compatibilité GPU",
-      "progress": 2,
-      "evidence": "Seuls éléments liés : des mesures matérielles sur Radeon 880M (gfx1150) documentées dans docs/design.md, et la prise en charge de VK_EXT_custom_border_color dans le chaînage des features du device, avec repli sur noir transparent si l'extension est absente. Le correctif concerne la compilation du runtime et du harnais de test GPU. Aucune validation GPU réelle avec le jeu n'est indiquée."
+      "progress": 0,
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 4,
       "name": "Modèles et géométrie",
       "progress": 0,
-      "evidence": "Aucun commit ne concerne les modèles ou la géométrie."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 5,
       "name": "Textures et matériaux",
       "progress": 0,
-      "evidence": "Aucune fonctionnalité de textures ou de matériaux n'est ajoutée. Dans tools/bcpack_history_calib.py, seule une protection de stdout est ajoutée."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 6,
       "name": "Audio",
       "progress": 0,
-      "evidence": "Aucun commit ne concerne l'audio."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 7,
       "name": "Chargement des exécutables PE",
       "progress": 0,
-      "evidence": "Aucun commit ne concerne le chargement des exécutables PE."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 8,
       "name": "Contrôleur et GameInput",
       "progress": 0,
-      "evidence": "Aucun commit ne concerne le contrôleur ou GameInput."
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 9,
       "name": "Traduction D3D12 vers Vulkan",
-      "progress": 6,
-      "evidence": "Code modifié dans runtime/shims/d3d12_vulkan_device.cpp : la validation de la qualité MSAA utilise les noms DXGI_STANDARD/CENTER_MULTISAMPLE_QUALITY_PATTERN, car les anciens SDK n'ont pas les noms D3D12_. Les tests d3d12_vulkan_device_test.cpp sont adaptés. Le chaînage de VkPhysicalDeviceCustomBorderColorFeaturesEXT est corrigé après le remplacement par leonida::Vulkan13Features (#1706), dans le runtime et vk_test_device.h. Le runtime et le harnais GPU ne compilaient pas, et ces correctifs rétablissent la compilation. ps_m3_query est rattaché à d3d12_m3_frame_test dans run_gpu_tests.py. Il s'agit de code intégré, de correctifs de build et de tests, sans validation réelle avec le jeu. Une com"
+      "progress": 0,
+      "evidence": "Pas encore documenté."
     },
     {
       "id": 10,
       "name": "Démarrage réel et gameplay",
       "progress": 0,
-      "evidence": "Aucun démarrage réel du jeu n'est confirmé."
+      "evidence": "Aucun démarrage réel du jeu n'est publiquement confirmé."
     }
   ]
 }
