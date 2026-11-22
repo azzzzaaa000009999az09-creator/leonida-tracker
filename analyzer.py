@@ -526,38 +526,91 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
     print("Phase 1 : analyse des 10 ?tapes...", flush=True)
     result = claude(prompt, max_tokens=7500)
 
-    # Si Claude a d?j? fourni l'objet complet, aucun deuxi?me appel.
-    if isinstance(result, dict):
-        if (
-            isinstance(result.get("stages"), list)
-            and isinstance(result.get("evidence_register"), list)
-        ):
-            print(
-                "R?ponse compl?te re?ue en une seule phase.",
-                flush=True
-            )
-            return result
 
-        for key in (
-            "required_output", "output", "result",
-            "analysis", "baseline", "data", "response"
-        ):
-            nested = result.get(key)
+    # D?tection r?cursive des r?ponses Claude.
+    # Claude peut placer les ?tapes dans une enveloppe JSON inattendue.
+    complete_result = None
+    stage_candidates = []
+    visited = set()
+
+    def inspect_structure(value, depth=0):
+        nonlocal complete_result
+
+        if depth > 12 or id(value) in visited:
+            return
+
+        if isinstance(value, (dict, list)):
+            visited.add(id(value))
+
+        if isinstance(value, dict):
+            possible_stages = value.get("stages")
+
             if (
-                isinstance(nested, dict)
-                and isinstance(nested.get("stages"), list)
-                and isinstance(nested.get("evidence_register"), list)
+                isinstance(possible_stages, list)
+                and isinstance(value.get("evidence_register"), list)
             ):
-                return nested
+                complete_result = value
+                return
 
-    # Si Claude renvoie un tableau, v?rifier qu'il contient bien
-    # les dix ?tapes avant de demander les seules m?tadonn?es.
-    stages = result if isinstance(result, list) else None
+            if isinstance(possible_stages, list):
+                stage_candidates.append(possible_stages)
+
+            for child in value.values():
+                inspect_structure(child, depth + 1)
+
+        elif isinstance(value, list):
+            if (
+                len(value) >= 10
+                and all(isinstance(item, dict) for item in value)
+            ):
+                stage_candidates.append(value)
+
+            for child in value:
+                inspect_structure(child, depth + 1)
+
+    inspect_structure(result)
+
+    if complete_result is not None:
+        print(
+            "Objet complet d?tect? dans la r?ponse Claude.",
+            flush=True
+        )
+        return complete_result
+
+    # Choisir la liste qui contient le plus d'identifiants d'?tapes valides.
+    stages = None
+    best_score = -1
+
+    for candidate in stage_candidates:
+        score = 0
+        ids = set()
+
+        for item in candidate:
+            if not isinstance(item, dict):
+                continue
+            try:
+                sid = int(item.get("id"))
+                if 1 <= sid <= 10:
+                    ids.add(sid)
+            except (TypeError, ValueError):
+                pass
+
+        score = len(ids)
+
+        if score > best_score:
+            best_score = score
+            stages = candidate
 
     if stages is None:
+        if isinstance(result, dict):
+            print(
+                "Structure JSON re?ue : cl?s racine = "
+                + repr(list(result.keys())[:30]),
+                flush=True
+            )
         raise RuntimeError(
-            "Format de premi?re r?ponse non reconnu : "
-            + type(result).__name__
+            "Aucune liste d'?tapes exploitable trouv?e "
+            "dans la r?ponse Claude."
         )
 
     indexed = {}
@@ -565,7 +618,8 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
         if isinstance(item, dict):
             try:
                 sid = int(item.get("id"))
-                indexed[sid] = item
+                if 1 <= sid <= 10:
+                    indexed[sid] = item
             except (TypeError, ValueError):
                 continue
 
