@@ -70,49 +70,40 @@ def github(url):
 
 
 def extract_claude_json(text):
-    # Accepte le JSON brut, les blocs Markdown ```json et le texte autour.
     cleaned = (text or "").strip().lstrip("\ufeff")
     cleaned = re.sub(r"^\s*```(?:json)?\s*", "", cleaned, flags=re.I)
     cleaned = re.sub(r"\s*```\s*$", "", cleaned)
 
-    # Extrait le premier objet JSON complet sans se tromper sur les accolades
-    # présentes dans les chaînes de caractères.
-    start = cleaned.find("{")
-    while start >= 0:
-        depth = 0
-        in_string = False
-        escaped = False
-        for pos in range(start, len(cleaned)):
-            char = cleaned[pos]
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == '"' :
-                    in_string = False
-                continue
-            if char == '"' :
-                in_string = True
-            elif char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    candidate = cleaned[start:pos + 1]
-                    try:
-                        parsed = json.loads(candidate)
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except json.JSONDecodeError:
-                        break
-        start = cleaned.find("{", start + 1)
+    decoder = json.JSONDecoder()
+    candidates = []
 
-    preview = cleaned[:1400].replace("\n", " ")
+    for position, char in enumerate(cleaned):
+        if char not in "{[":
+            continue
+        try:
+            value, _ = decoder.raw_decode(cleaned[position:])
+            candidates.append(value)
+        except json.JSONDecodeError:
+            continue
+
+    # Priorit? ? un objet complet contenant les champs attendus.
+    for value in candidates:
+        if isinstance(value, dict) and (
+            "stages" in value
+            or "required_output" in value
+            or "output" in value
+        ):
+            return value
+
+    # Sinon, retourner le premier document JSON valide.
+    if candidates:
+        return candidates[0]
+
+    preview = cleaned[:1000].replace("\n", " ")
     raise RuntimeError(
-        "Réponse Claude : aucun objet JSON valide trouvé. Début de réponse : "
-        + preview
+        "Aucun JSON valide trouv? dans la r?ponse Claude : " + preview
     )
+
 
 
 def claude(prompt, max_tokens=5000):
@@ -533,16 +524,23 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
 
 
 def validate_baseline_result(result, commits):
-    if not isinstance(result, dict):
-        raise RuntimeError("Réponse Claude non structurée.")
+    if not isinstance(result, (dict, list)):
+        raise RuntimeError("R?ponse Claude non structur?e.")
 
-    # Recherche des ?tapes dans la r?ponse et ses enveloppes JSON.
     def find_payload(node, depth=0):
-        if depth > 8:
+        if depth > 10:
             return None
 
         if isinstance(node, dict):
-            if isinstance(node.get("stages"), list):
+            stages = node.get("stages")
+            register = node.get("evidence_register")
+
+            # Une ?tape isol?e ne constitue jamais une r?ponse compl?te.
+            if (
+                isinstance(stages, list)
+                and isinstance(register, list)
+                and len(stages) >= 10
+            ):
                 return node
 
             preferred = (
@@ -573,13 +571,18 @@ def validate_baseline_result(result, commits):
     payload = find_payload(result)
 
     if payload is None:
-        keys = ", ".join(sorted(str(k) for k in result.keys()))
+        if isinstance(result, dict):
+            keys = ", ".join(sorted(str(k) for k in result.keys()))
+        else:
+            keys = "tableau de " + str(len(result)) + " ?l?ments"
+
         raise RuntimeError(
-            "Liste des ?tapes absente. Cl?s racine re?ues : " + keys
+            "R?ponse compl?te introuvable : 10 ?tapes et registre requis. "
+            "Structure re?ue : " + keys
         )
 
     result = payload
-    stages = result.get("stages")
+    stages = result["stages"]
 
     indexed = {}
     for item in stages:
@@ -588,45 +591,30 @@ def validate_baseline_result(result, commits):
 
     missing = [i for i in range(1, 11) if i not in indexed]
     if missing:
-        raise RuntimeError(
-            f"Étapes absentes dans la réponse Claude : {missing}"
-        )
+        raise RuntimeError("?tapes absentes : " + str(missing))
 
     for sid in range(1, 10):
         evidence = str(indexed[sid].get("evidence", "")).strip()
-
         if len(evidence) < 15:
             raise RuntimeError(
-                f"Justification insuffisante pour l'étape {sid}."
-            )
-
-        if evidence.lower() in (
-            "pas encore documenté.",
-            "non documenté",
-            "aucune preuve",
-        ):
-            raise RuntimeError(
-                f"Justification trop générique pour l'étape {sid}."
+                f"Justification insuffisante pour l'?tape {sid}."
             )
 
         try:
             value = int(indexed[sid].get("progress"))
         except (TypeError, ValueError):
             raise RuntimeError(
-                f"Progression invalide pour l'étape {sid}."
+                f"Progression invalide pour l'?tape {sid}."
             )
 
         if not 0 <= value <= 100:
             raise RuntimeError(
-                f"Progression hors limites pour l'étape {sid}."
+                f"Progression hors limites pour l'?tape {sid}."
             )
 
-    register = result.get("evidence_register")
-
+    register = result["evidence_register"]
     if not isinstance(register, list) or len(register) < 3:
-        raise RuntimeError(
-            "Registre de preuves absent ou trop pauvre."
-        )
+        raise RuntimeError("Registre de preuves absent ou trop pauvre.")
 
     valid_claims = [
         item for item in register
@@ -636,14 +624,11 @@ def validate_baseline_result(result, commits):
     ]
 
     if len(valid_claims) < 3:
-        raise RuntimeError(
-            "Moins de trois affirmations vérifiables."
-        )
+        raise RuntimeError("Moins de trois affirmations v?rifiables.")
 
     summaries = result.get("commit_summaries", [])
-
     if not isinstance(summaries, list):
-        raise RuntimeError("Résumés de commits invalides.")
+        raise RuntimeError("R?sum?s de commits invalides.")
 
     expected = {item["sha"] for item in commits}
     matched = set()
@@ -663,11 +648,16 @@ def validate_baseline_result(result, commits):
                 matched.add(full_sha)
 
     if commits and not matched:
-        raise RuntimeError(
-            "Aucun résumé de commit exploitable."
-        )
+        raise RuntimeError("Aucun r?sum? de commit exploitable.")
 
-    return True
+    # L'?tape 10 reste obligatoirement ? z?ro.
+    indexed[10]["progress"] = 0
+    indexed[10]["evidence"] = (
+        "Aucun d?marrage r?el du jeu n'est publiquement confirm?."
+    )
+
+    return result
+
 
 def update_incremental(old_progress, register, details):
     prompt = {
@@ -932,7 +922,7 @@ def main():
                 recent_details
             )
 
-            validate_baseline_result(result, recent_details)
+            result = validate_baseline_result(result, recent_details)
 
             new_progress = normalize_progress(result)
 
