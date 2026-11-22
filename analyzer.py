@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import json
 import re
@@ -67,6 +67,53 @@ def github(url):
     headers = {"Authorization": "Bearer " + TOKEN} if TOKEN else {}
     return request_json(url, headers=headers)
 
+
+def extract_claude_json(text):
+    # Accepte le JSON brut, les blocs Markdown ```json et le texte autour.
+    cleaned = (text or "").strip().lstrip("\ufeff")
+    cleaned = re.sub(r"^\s*```(?:json)?\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+
+    # Extrait le premier objet JSON complet sans se tromper sur les accolades
+    # présentes dans les chaînes de caractères.
+    start = cleaned.find("{")
+    while start >= 0:
+        depth = 0
+        in_string = False
+        escaped = False
+        for pos in range(start, len(cleaned)):
+            char = cleaned[pos]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"' :
+                    in_string = False
+                continue
+            if char == '"' :
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:pos + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except json.JSONDecodeError:
+                        break
+        start = cleaned.find("{", start + 1)
+
+    preview = cleaned[:1400].replace("\n", " ")
+    raise RuntimeError(
+        "Réponse Claude : aucun objet JSON valide trouvé. Début de réponse : "
+        + preview
+    )
+
+
 def claude(prompt, max_tokens=5000):
     if not KEY:
         raise RuntimeError("Secret ANTHROPIC_API_KEY absent.")
@@ -87,16 +134,12 @@ def claude(prompt, max_tokens=5000):
         },
         timeout=240,
     )
-    text = "".join(
+    response_text = "".join(
         item.get("text", "")
         for item in result.get("content", [])
         if item.get("type") == "text"
     )
-    match = re.search(r"\{.*\}", text, re.S)
-    if not match:
-        raise RuntimeError("Réponse Claude non reconnue : " + text[:800])
-    return json.loads(match.group(0))
-
+    return extract_claude_json(response_text)
 def run_git(args, cwd=None, capture=True):
     result = subprocess.run(
         ["git"] + args,
