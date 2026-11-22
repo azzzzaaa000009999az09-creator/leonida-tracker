@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090910"><title>Leonida Tracker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="brand"><b>L</b><span><strong>LEONIDA</strong><small>PROJECT TRACKER</small></span></div>
+<nav><span id="connection">Connexion…</span><a href="https://github.com/ItsNotRexed/Leonida" target="_blank" rel="noopener">Dépôt source ↗</a></nav></header>
+<main>
+<section class="hero"><label>SUIVI AUTOMATISÉ DU PROJET</label><h1>Leonida <em>Tracker</em></h1>
+<p>Suivi des développements publics à partir des commits du dépôt officiel.</p></section>
+<section class="overview">
+<article class="panel"><div class="line"><span>Progression estimée</span><small>NON OFFICIELLE</small></div>
+<div class="number"><strong id="overall">--</strong><i>%</i></div><div class="track"><div id="overall-bar"></div></div><p id="progress-note" class="muted">En attente des données…</p></article>
+<article class="panel sync"><small>DERNIÈRE SYNCHRONISATION</small><strong id="last-sync">En attente</strong>
+<p class="muted">Vérification automatique environ toutes les 5 minutes.</p><span id="new-indicator" class="new hidden">Nouveautés disponibles</span>
+<button id="read-button">Marquer comme lu</button></article></section>
+<section><div class="section-title"><div><label>AVANCEMENT TECHNIQUE</label><h2>Étapes du projet</h2></div></div><div id="stages" class="stages"></div></section>
+<section><div class="section-title"><div><label>ACTIVITÉ DU DÉPÔT</label><h2>Derniers commits</h2></div><small id="commit-count">0 commit</small></div><div id="commits" class="commits">Chargement…</div></section>
+<footer>Leonida Tracker · Données publiques GitHub · Analyses IA<br>Les pourcentages sont des estimations indépendantes, pas des annonces officielles.</footer>
+</main><script src="js/app.js"></script></body></html>

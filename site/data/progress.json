@@ -1,0 +1,11 @@
+{"overall":0,"last_updated":null,"note":"En attente de la première analyse des commits.","stages":[
+{"id":1,"name":"Identification du jeu et des formats","progress":0,"evidence":"En attente d'analyse."},
+{"id":2,"name":"Shaders et systèmes graphiques","progress":0,"evidence":"En attente d'analyse."},
+{"id":3,"name":"Compatibilité GPU","progress":0,"evidence":"En attente d'analyse."},
+{"id":4,"name":"Modèles et géométrie","progress":0,"evidence":"En attente d'analyse."},
+{"id":5,"name":"Textures et matériaux","progress":0,"evidence":"En attente d'analyse."},
+{"id":6,"name":"Audio","progress":0,"evidence":"En attente d'analyse."},
+{"id":7,"name":"Chargement des exécutables PE","progress":0,"evidence":"En attente d'analyse."},
+{"id":8,"name":"Contrôleur et GameInput","progress":0,"evidence":"En attente d'analyse."},
+{"id":9,"name":"Traduction D3D12 vers Vulkan","progress":0,"evidence":"En attente d'analyse."},
+{"id":10,"name":"Démarrage réel et gameplay","progress":0,"evidence":"Non confirmé. Reste à 0 tant qu'un démarrage réel n'est pas confirmé publiquement."}]}

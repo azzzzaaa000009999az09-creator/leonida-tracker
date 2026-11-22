@@ -1,0 +1,12 @@
+const $=id=>document.getElementById(id),base="data/";
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function get(file){const r=await fetch(base+file+"?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw Error("Données indisponibles");return r.json()}
+function date(v){if(!v)return"Non renseignée";const d=new Date(v);return isNaN(d)? "Non renseignée":d.toLocaleString("fr-FR")}
+function showProgress(d){const n=Math.max(0,Math.min(100,Number(d.overall)||0));$("overall").textContent=n;$("overall-bar").style.width=n+"%";$("last-sync").textContent=date(d.last_updated);$("progress-note").textContent=d.note||"Estimation basée sur les éléments publics.";
+$("stages").innerHTML=(d.stages||[]).map(s=>{const p=Math.max(0,Math.min(100,Number(s.progress)||0));return `<article class="stage"><div class="stage-top"><span class="stage-name">${esc(s.name)}</span><span class="stage-percent">${p}%</span></div><div class="stage-track"><div style="width:${p}%"></div></div><div class="stage-evidence">${esc(s.evidence||"Pas encore documenté.")}</div></article>`}).join("")}
+function showCommits(items){items=Array.isArray(items)?items:[];$("commit-count").textContent=items.length+" commit(s)";
+$("commits").innerHTML=items.length?items.map(c=>`<article class="commit"><div class="commit-head"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.short_sha)} · ${esc(c.message)}</a><span class="meta">${esc(date(c.date))}</span></div><p>${esc(c.summary||"Résumé indisponible.")}</p><span class="meta">${esc(c.author||"Auteur inconnu")}</span></article>`).join(""):'<article class="panel">Aucun commit enregistré.</article>';
+const newest=items.length?items[0].sha:"",seen=localStorage.getItem("leonida-seen")||"";$("new-indicator").classList.toggle("hidden",!newest||!seen||newest===seen);
+$("read-button").onclick=()=>{if(newest)localStorage.setItem("leonida-seen",newest);$("new-indicator").classList.add("hidden")};if(newest&&!seen)localStorage.setItem("leonida-seen",newest)}
+async function refresh(){try{const [p,c]=await Promise.all([get("progress.json"),get("commits.json")]);showProgress(p);showCommits(c);$("connection").textContent="Données actualisées"}catch(e){$("connection").textContent="Données indisponibles"}}
+refresh();setInterval(refresh,60000);
