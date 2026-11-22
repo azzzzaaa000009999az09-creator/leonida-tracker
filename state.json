@@ -8,5 +8,7 @@
   "baseline_release_url": null,
   "baseline_completed_at": "2026-11-22T17:42:00.721740+00:00",
   "evidence_register": [],
-  "baseline_last_attempt": "2026-11-22T18:02:49.182341+00:00"
+  "baseline_last_attempt": "2026-11-22T18:06:11.188276+00:00",
+  "baseline_retry_after": "2026-11-22T19:06:11.188251+00:00",
+  "baseline_last_error": "Format de premi?re r?ponse non reconnu : dict"
 }
