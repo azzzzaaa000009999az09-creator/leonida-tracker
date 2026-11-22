@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import json
 import re
 import subprocess
@@ -117,29 +118,72 @@ def extract_claude_json(text):
 def claude(prompt, max_tokens=5000):
     if not KEY:
         raise RuntimeError("Secret ANTHROPIC_API_KEY absent.")
-    result = request_json(
-        "https://api.anthropic.com/v1/messages",
-        {
-            "x-api-key": KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        {
-            "model": MODEL,
-            "max_tokens": max_tokens,
-            "messages": [{
-                "role": "user",
-                "content": json.dumps(prompt, ensure_ascii=False),
-            }],
-        },
-        timeout=240,
+
+    last_error = "Réponse vide ou non exploitable."
+
+    for attempt in range(1, 5):
+        try:
+            requested_tokens = min(max_tokens + (attempt - 1) * 1500, 9000)
+
+            result = request_json(
+                "https://api.anthropic.com/v1/messages",
+                {
+                    "x-api-key": KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                {
+                    "model": MODEL,
+                    "max_tokens": requested_tokens,
+                    "messages": [{
+                        "role": "user",
+                        "content": json.dumps(prompt, ensure_ascii=False),
+                    }],
+                },
+                timeout=240,
+            )
+
+            blocks = result.get("content", [])
+            response_text = "\n".join(
+                item.get("text", "")
+                for item in blocks
+                if item.get("type") == "text"
+            ).strip()
+
+            if response_text:
+                try:
+                    return extract_claude_json(response_text)
+                except Exception as exc:
+                    last_error = (
+                        f"JSON invalide : {exc}; "
+                        f"stop_reason={result.get('stop_reason')}; "
+                        f"tentative={attempt}/4"
+                    )
+            else:
+                last_error = (
+                    f"Réponse sans texte; "
+                    f"stop_reason={result.get('stop_reason')}; "
+                    f"usage={result.get('usage')}; "
+                    f"tentative={attempt}/4"
+                )
+
+        except Exception as exc:
+            last_error = f"Erreur API : {exc}; tentative={attempt}/4"
+
+        if attempt < 4:
+            delay = 5 * (2 ** (attempt - 1))
+            print(
+                f"Nouvelle tentative Claude dans {delay}s "
+                f"({attempt}/4).",
+                flush=True,
+            )
+            time.sleep(delay)
+
+    raise RuntimeError(
+        "Claude a échoué après 4 tentatives. " + last_error
     )
-    response_text = "".join(
-        item.get("text", "")
-        for item in result.get("content", [])
-        if item.get("type") == "text"
-    )
-    return extract_claude_json(response_text)
+
+
 def run_git(args, cwd=None, capture=True):
     result = subprocess.run(
         ["git"] + args,
@@ -250,7 +294,7 @@ def current_snapshot(head):
         "snapshot_note": "Instantané des fichiers actuels du dépôt, avec priorité aux README et docs techniques. Certains fichiers volumineux peuvent être tronqués.",
     }
 
-def commit_batches(commits, size=60):
+def commit_batches(commits, size=30):
     for start in range(0, len(commits), size):
         yield commits[start:start + size]
 
@@ -480,19 +524,98 @@ def main():
     existing_commits = read_json(COMMITS_FILE, [])
 
     if not state.get("baseline_complete"):
-        print("Première analyse complète : clonage de l'historique Git...", flush=True)
-        head = clone_source()
-        commits = all_history(head)
-        print(f"{len(commits)} commits historiques trouvés. Analyse par lots...", flush=True)
 
-        register = []
-        summaries = []
-        batches = list(commit_batches(commits, 60))
-        for index, batch in enumerate(batches, start=1):
-            print(f"Analyse historique : lot {index}/{len(batches)} ({len(batch)} commits)", flush=True)
-            result = analyze_history_batch(batch, index, len(batches))
-            summaries.append(result.get("batch_summary", ""))
-            register.extend(result.get("evidence", []))
+        checkpoint = state.get("baseline_in_progress")
+
+        print("Préparation de l'audit historique...", flush=True)
+
+        # Le dépôt source est cloné ou actualisé.
+        clone_source()
+
+        if checkpoint:
+            head = checkpoint["head"]
+
+            # Revenir exactement à la version utilisée par le checkpoint.
+            run_git(["checkout", head], cwd=CACHE)
+
+            commits = all_history(head)
+            register = checkpoint.get("register", [])
+            summaries = checkpoint.get("summaries", [])
+            next_batch = int(checkpoint.get("next_batch", 0))
+
+            print(
+                f"Reprise de l'audit : lot {next_batch + 1}.",
+                flush=True,
+            )
+
+        else:
+            head = run_git(["rev-parse", "HEAD"], cwd=CACHE)
+            commits = all_history(head)
+
+            register = []
+            summaries = []
+            next_batch = 0
+
+            print(
+                f"{len(commits)} commits historiques trouvés.",
+                flush=True,
+            )
+
+        batches = list(commit_batches(commits, 30))
+
+        if next_batch > len(batches):
+            raise RuntimeError("Checkpoint incohérent.")
+
+        print(
+            f"Audit : {len(commits)} commits, "
+            f"{len(batches)} lots de 30 maximum.",
+            flush=True,
+        )
+
+        # Sauvegarde initiale du checkpoint.
+        checkpoint = {
+            "head": head,
+            "next_batch": next_batch,
+            "register": register,
+            "summaries": summaries,
+            "commits_total": len(commits),
+            "batch_size": 30,
+        }
+
+        state = {
+            "schema_version": 3,
+            "baseline_in_progress": checkpoint,
+        }
+
+        write_json(STATE_FILE, state)
+
+        # Analyse avec sauvegarde après chaque lot.
+        for batch_index in range(next_batch, len(batches)):
+
+            batch_number = batch_index + 1
+            batch = batches[batch_index]
+
+            print(
+                f"Analyse historique : lot "
+                f"{batch_number}/{len(batches)} "
+                f"({len(batch)} commits)",
+                flush=True,
+            )
+
+            result = analyze_history_batch(
+                batch,
+                batch_number,
+                len(batches),
+            )
+
+            summaries.append(
+                result.get("batch_summary", "")
+            )
+
+            register.extend(
+                result.get("evidence", [])
+            )
+
             if result.get("open_questions"):
                 register.extend({
                     "stage_id": 0,
@@ -501,21 +624,83 @@ def main():
                     "confidence": "faible",
                     "commit_shas": [],
                 } for question in result["open_questions"][:8])
-            if index % 10 == 0 and index < len(batches):
-                compacted = compact_register(register, summaries[-10:])
-                register = compacted.get("evidence_register", [])
-                summaries = [compacted.get("history_summary", "")]
+
+            # Consolidation périodique.
+            if batch_number % 10 == 0 and batch_number < len(batches):
+
+                print(
+                    "Consolidation intermédiaire des preuves...",
+                    flush=True,
+                )
+
+                compacted = compact_register(
+                    register,
+                    summaries[-10:],
+                )
+
+                register = compacted.get(
+                    "evidence_register",
+                    [],
+                )
+
+                summaries = [
+                    compacted.get("history_summary", "")
+                ]
+
+            # Enregistrement du dernier lot terminé.
+            checkpoint = {
+                "head": head,
+                "next_batch": batch_number,
+                "register": register,
+                "summaries": summaries,
+                "commits_total": len(commits),
+                "batch_size": 30,
+            }
+
+            state = {
+                "schema_version": 3,
+                "baseline_in_progress": checkpoint,
+            }
+
+            write_json(STATE_FILE, state)
+
+            print(
+                f"Checkpoint enregistré : "
+                f"{batch_number}/{len(batches)}.",
+                flush=True,
+            )
+
+        # Consolidation finale.
         if len(register) > 180:
+
+            print(
+                "Consolidation finale du registre...",
+                flush=True,
+            )
+
             compacted = compact_register(register, summaries)
-            register = compacted.get("evidence_register", [])
-            summaries = [compacted.get("history_summary", "")]
+
+            register = compacted.get(
+                "evidence_register",
+                [],
+            )
+
+            summaries = [
+                compacted.get("history_summary", "")
+            ]
 
         history_summary = "\n".join(summaries)[-18000:]
-        print("Audit de l'arborescence, des sources et de la documentation actuelles...", flush=True)
+
+        print(
+            "Analyse du code et de la documentation actuels...",
+            flush=True,
+        )
+
         snapshot = current_snapshot(head)
 
         latest_records = commits[-40:]
         latest_details = []
+
         for record in latest_records:
             latest_details.append({
                 "sha": record["sha"],
@@ -526,31 +711,47 @@ def main():
                 "files": record["files"],
             })
 
-        result = evaluate_baseline(snapshot, register, history_summary, latest_details)
-        progress = normalize_progress(result)
-        commit_list = update_commit_list(
-            [], latest_details, result.get("commit_summaries", [])
+        # Évaluation finale des 10 étapes.
+        result = evaluate_baseline(
+            snapshot,
+            register,
+            history_summary,
+            latest_details,
         )
-        latest_sha = head
+
+        progress = normalize_progress(result)
+
+        commit_list = update_commit_list(
+            [],
+            latest_details,
+            result.get("commit_summaries", []),
+        )
+
+        # Étape 10 toujours à zéro tant que le jeu ne démarre pas réellement.
         state = {
-            "schema_version": 2,
+            "schema_version": 3,
             "baseline_complete": True,
-            "last_sha": latest_sha,
+            "last_sha": head,
             "history_commits_total": len(commits),
             "history_batches": len(batches),
             "history_summary": history_summary,
             "evidence_register": register,
             "baseline_head": head,
-            "baseline_completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "baseline_completed_at": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat(),
         }
+
         write_json(PROGRESS_FILE, progress)
         write_json(COMMITS_FILE, commit_list)
         write_json(STATE_FILE, state)
+
         print(
             f"Audit initial terminé : {len(commits)} commits examinés. "
             f"Progression estimée : {progress['overall']}%.",
             flush=True,
         )
+
         return
 
     last_sha = state.get("last_sha")
