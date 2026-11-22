@@ -536,9 +536,50 @@ def validate_baseline_result(result, commits):
     if not isinstance(result, dict):
         raise RuntimeError("Réponse Claude non structurée.")
 
+    # Recherche des ?tapes dans la r?ponse et ses enveloppes JSON.
+    def find_payload(node, depth=0):
+        if depth > 8:
+            return None
+
+        if isinstance(node, dict):
+            if isinstance(node.get("stages"), list):
+                return node
+
+            preferred = (
+                "required_output", "output", "result",
+                "analysis", "baseline", "data", "response"
+            )
+
+            for key in preferred:
+                if key in node:
+                    found = find_payload(node[key], depth + 1)
+                    if found is not None:
+                        return found
+
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    found = find_payload(value, depth + 1)
+                    if found is not None:
+                        return found
+
+        elif isinstance(node, list):
+            for value in node:
+                found = find_payload(value, depth + 1)
+                if found is not None:
+                    return found
+
+        return None
+
+    payload = find_payload(result)
+
+    if payload is None:
+        keys = ", ".join(sorted(str(k) for k in result.keys()))
+        raise RuntimeError(
+            "Liste des ?tapes absente. Cl?s racine re?ues : " + keys
+        )
+
+    result = payload
     stages = result.get("stages")
-    if not isinstance(stages, list):
-        raise RuntimeError("Liste des étapes absente.")
 
     indexed = {}
     for item in stages:
