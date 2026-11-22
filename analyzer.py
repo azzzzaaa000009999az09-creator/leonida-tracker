@@ -1011,3 +1011,6 @@ def main():
         f"Progression : {new_progress['overall']}%.",
         flush=True
     )
+
+if __name__ == "__main__":
+    main()
