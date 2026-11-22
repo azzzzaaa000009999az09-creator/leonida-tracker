@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "sha": "cce1757c2a39c8cd0fd14ae4c9a82ac82ffb95ea",
+    "short_sha": "cce1757",
+    "message": "Merge pull request #2029 from Youssef Rahmouni",
+    "summary": "Fusion de la PR #2029 : med3_f du traducteur RDNA2 vers SPIR-V utilise NMin/NMax au lieu de FClamp pour éviter un comportement indéfini avec des NaN. Tests synthétiques ajoutés pour les cas NaN et pour l'absence de FClamp dans le SPIR-V. docs/design.md documente des mesures matérielles sur gfx1150 sur les modificateurs de sortie et l'écart probable du traducteur.",
+    "author": "ItsNotRexed",
+    "date": "2026-11-22T15:40:36Z",
+    "url": "https://github.com/ItsNotRexed/Leonida/commit/cce1757c2a39c8cd0fd14ae4c9a82ac82ffb95ea"
+  },
+  {
+    "sha": "e65b624932a48de1ea9defb41ae6a371d65b48f6",
+    "short_sha": "e65b624",
+    "message": "Merge pull request #2030 from itsRevela",
+    "summary": "Fusion de la PR #2030 : le shim D3D12 vers Vulkan utilise les constantes DXGI pour les motifs de qualité MSAA standard et centré, car les anciens en-têtes du SDK Windows n'ont pas les noms D3D12_. Les tests de comparaison d'arguments invalides sont mis à jour.",
+    "author": "ItsNotRexed",
+    "date": "2026-11-22T15:40:36Z",
+    "url": "https://github.com/ItsNotRexed/Leonida/commit/e65b624932a48de1ea9defb41ae6a371d65b48f6"
+  },
+  {
+    "sha": "b1d7e4107496c8893e230d2c7f0be5455ca7c332",
+    "short_sha": "b1d7e41",
+    "message": "Fix the runtime build after the merge round: custom border colour chain, lds_bytes CLI check",
+    "summary": "Correctif de compilation après fusions : la structure custom border colour est chaînée via *v13.next() dans le runtime et dans vk_test_device.h. Le test CLI lds_bytes attend désormais « at byte N ». Correctif de build et de tests, sans preuve de gameplay.",
+    "author": "ItsNotRexed",
+    "date": "2026-11-22T16:14:21Z",
+    "url": "https://github.com/ItsNotRexed/Leonida/commit/b1d7e4107496c8893e230d2c7f0be5455ca7c332"
+  },
+  {
+    "sha": "9f03fc31e1d612be45fe7fc4c6e19ed5a74c2fe2",
+    "short_sha": "9f03fc3",
+    "message": "run_gpu_tests: ps_m3_query belongs to d3d12_m3_frame_test (OTHER_HARNESS)",
+    "summary": "run_gpu_tests.py rattache le shader ps_m3_query au test ctest d3d12_m3_frame_test, ce qui évite l'échec « no checker defined ». Correction d'infrastructure de test.",
+    "author": "ItsNotRexed",
+    "date": "2026-11-22T16:22:00Z",
+    "url": "https://github.com/ItsNotRexed/Leonida/commit/9f03fc31e1d612be45fe7fc4c6e19ed5a74c2fe2"
+  },
+  {
+    "sha": "49475796c226c8511b9470bf97a4daf57b8af323",
+    "short_sha": "4947579",
+    "message": "Fix tests the round-39 merges broke",
+    "summary": "Corrections de tests cassés par des fusions : MAX_STRUCTURED_DEPTH abaissé dans un test de traduction, scan des codes de skip, séparateur INCLUDE selon la plateforme, ligne de langues dans docs/README.md. Écritures de texte en LF dans first_light.py et make_game.py, et garde de stdout dans trois outils. Maintenance et outillage, sans nouvelle fonctionnalité de jeu.",
+    "author": "ItsNotRexed",
+    "date": "2026-11-22T16:31:20Z",
+    "url": "https://github.com/ItsNotRexed/Leonida/commit/49475796c226c8511b9470bf97a4daf57b8af323"
+  }
+]
