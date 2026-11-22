@@ -8,7 +8,5 @@
   "baseline_release_url": null,
   "baseline_completed_at": "2026-11-22T17:42:00.721740+00:00",
   "evidence_register": [],
-  "baseline_last_error": "Liste des ?tapes absente. Cl?s racine re?ues : evidence, id, progress",
-  "baseline_last_attempt": "2026-11-22T17:55:08.274020+00:00",
-  "baseline_retry_after": "2026-11-22T18:55:08.273997+00:00"
+  "baseline_last_attempt": "2026-11-22T17:55:08.274020+00:00"
 }

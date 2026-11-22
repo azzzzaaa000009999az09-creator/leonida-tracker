@@ -69,40 +69,32 @@ def github(url):
     return request_json(url, headers=headers)
 
 
+
 def extract_claude_json(text):
     cleaned = (text or "").strip().lstrip("\ufeff")
     cleaned = re.sub(r"^\s*```(?:json)?\s*", "", cleaned, flags=re.I)
     cleaned = re.sub(r"\s*```\s*$", "", cleaned)
 
     decoder = json.JSONDecoder()
-    candidates = []
 
     for position, char in enumerate(cleaned):
         if char not in "{[":
             continue
+
         try:
-            value, _ = decoder.raw_decode(cleaned[position:])
-            candidates.append(value)
+            value, end = decoder.raw_decode(cleaned[position:])
         except json.JSONDecodeError:
             continue
 
-    # Priorit? ? un objet complet contenant les champs attendus.
-    for value in candidates:
-        if isinstance(value, dict) and (
-            "stages" in value
-            or "required_output" in value
-            or "output" in value
-        ):
+        if isinstance(value, (dict, list)):
             return value
 
-    # Sinon, retourner le premier document JSON valide.
-    if candidates:
-        return candidates[0]
-
-    preview = cleaned[:1000].replace("\n", " ")
+    preview = cleaned[:1400].replace("\n", " ")
     raise RuntimeError(
-        "Aucun JSON valide trouv? dans la r?ponse Claude : " + preview
+        "Aucun document JSON complet trouv? dans la r?ponse Claude : "
+        + preview
     )
+
 
 
 
@@ -463,6 +455,11 @@ def evaluate_baseline(snapshot, register, history_summary, latest_commits):
             "actuel du projet Leonida."
         ),
         "rules": [
+            "Retourne exactement un objet JSON ? la racine, jamais un tableau ni une ?tape isol?e.",
+            "Les cl?s racine obligatoires sont overall, note, stages, evidence_register et commit_summaries.",
+            "La cl? stages doit contenir exactement 10 objets avec id, progress et evidence.",
+            "La cl? evidence_register doit contenir au moins 3 affirmations factuelles v?rifiables.",
+            "La cl? commit_summaries doit contenir des r?sum?s reli?s aux SHA complets des commits fournis.",
             "Analyse le contenu réel des fichiers, pas seulement leurs noms.",
             "Ne prétends pas avoir analysé tout l'historique.",
             "Distingue code présent, code fonctionnel, tests synthétiques "
