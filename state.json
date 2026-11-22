@@ -1,3 +1,19 @@
 {
-  "last_sha": "49475796c226c8511b9470bf97a4daf57b8af323"
+  "schema_version": 3,
+  "baseline_in_progress": {
+    "head": "49475796c226c8511b9470bf97a4daf57b8af323",
+    "next_batch": 16,
+    "register": [],
+    "summaries": [
+      "Aucune preuve n'a été fournie : le champ « evidence » est vide et les dix résumés de lots sont des chaînes vides. Il n'y a donc rien à consolider, fusionner ou conserver (ni faits, ni contradictions, ni changements de statut, ni SHA). Aucun fait n'a été inventé et aucun test synthétique n'a été présenté comme une validation réelle.",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "commits_total": 4592,
+    "batch_size": 30
+  }
 }
